@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract SplitSheet {
+    struct Song {
+        string title;
+        address[] owners;
+        mapping(address => uint) equity;
+        mapping(address => string) personalInfo;
+        mapping(address => string) publishingInfo;
+    }
+
+    Song[] public songs;
+    uint public changeFee;
+    address public feeReceiver; // The address that receives change fees
+
+    // Events for important contract actions
+    event SongCreated(uint indexed songIndex, string title);
+    event PersonalInfoUpdated(uint indexed songIndex, address indexed owner, string newInfo);
+    event PublishingInfoUpdated(uint indexed songIndex, address indexed owner, string newInfo);
+    event EquityUpdated(uint indexed songIndex, address indexed owner, uint newEquity);
+    event FeeReceiverUpdated(address newFeeReceiver);
+
+    constructor(uint _changeFee, address _feeReceiver) {
+        changeFee = _changeFee;
+        feeReceiver = _feeReceiver;
+    }
+
+    modifier onlySongOwner(uint _songIndex) {
+        require(isOwner(_songIndex, msg.sender), "Only owners can perform this action.");
+        _;
+    }
+
+    function createSong(
+        string memory _title,
+        address[] memory _owners,
+        uint[] memory _equity,
+        string[] memory _personalInfo,
+        string[] memory _publishingInfo
+    ) external {
+        require(_owners.length == _equity.length && _owners.length == _personalInfo.length && _owners.length == _publishingInfo.length, "Input arrays must have the same length.");
+
+        Song memory song;
+        song.title = _title;
+        song.owners = _owners;
+
+        for (uint i = 0; i < _owners.length; i++) {
+            song.equity[_owners[i]] = _equity[i];
+            song.personalInfo[_owners[i]] = _personalInfo[i];
+            song.publishingInfo[_owners[i]] = _publishingInfo[i];
+        }
+
+        songs.push(song);
+        emit SongCreated(songs.length - 1, _title);
+    }
+
+    function getSong(uint _index) external view returns (
+        string memory title,
+        address[] memory owners,
+        uint[] memory equity,
+        string[] memory personalInfo,
+        string[] memory publishingInfo
+    ) {
+        require(_index < songs.length, "Invalid song index.");
+        Song storage song = songs[_index];
+
+        title = song.title;
+        owners = song.owners;
+        equity = new uint[](owners.length);
+        personalInfo = new string[](owners.length);
+        publishingInfo = new string[](owners.length);
+
+        for (uint i = 0; i < owners.length; i++) {
+            equity[i] = song.equity[owners[i]];
+            personalInfo[i] = song.personalInfo[owners[i]];
+            publishingInfo[i] = song.publishingInfo[owners[i]];
+        }
+    }
+
+    function updatePersonalInfo(uint _songIndex, string memory _personalInfo) external payable onlySongOwner(_songIndex) {
+        require(msg.value == changeFee, "Must pay the change fee.");
+        Song storage song = songs[_songIndex];
+        song.personalInfo[msg.sender] = _personalInfo;
+        emit PersonalInfoUpdated(_songIndex, msg.sender, _personalInfo);
+    }
+
+    function updatePublishingInfo(uint _songIndex, string memory _publishingInfo) external payable onlySongOwner(_songIndex) {
+        require(msg.value == changeFee, "Must pay the change fee.");
+        Song storage song = songs[_songIndex];
+        song.publishingInfo[msg.sender] = _publishingInfo;
+        emit PublishingInfoUpdated(_songIndex, msg.sender, _publishingInfo);
+    }
+
+    function updateEquity(uint _songIndex, uint _equity) external payable onlySongOwner(_songIndex) {
+        require(msg.value == changeFee, "Must pay the change fee.");
+        Song storage song = songs[_songIndex];
+        song.equity[msg.sender] = _equity;
+        emit EquityUpdated(_songIndex, msg.sender, _equity);
+    }
+
+    function isOwner(uint _songIndex, address _owner) internal view returns (bool) {
+        require(_songIndex < songs.length, "Invalid song index.");
+        Song storage song = songs[_songIndex];
+        for (uint i = 0; i < song.owners.length; i++) {
+            if (song.owners[i] == _owner) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function updateFeeReceiver(address _newFeeReceiver) external {
+        require(msg.sender == feeReceiver, "Only the current fee receiver can update the fee receiver address.");
+        feeReceiver = _newFeeReceiver;
+        emit FeeReceiverUpdated(_newFeeReceiver);
+    }
+
+    // Function to allow the owner to withdraw accumulated change fees
+    function withdrawChangeFees() external {
+        require(msg.sender == feeReceiver, "Only the fee receiver can withdraw change fees.");
+        payable(msg.sender).transfer(address(this).balance);
+    }
+}
